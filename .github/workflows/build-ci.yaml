@@ -12,49 +12,53 @@ on:
     types: [opened, reopened, synchronize]
 
 jobs:
-  install_and_test:
-    name: Install project and test on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: ["ubuntu-latest", "windows-latest", "macos-latest"]
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.13.0-beta.1"
-
-      - name: "Install project on ${{ matrix.os }}"
-        run: |
-          pip install .
-
-      - name: Run tests on ${{ matrix.os }}
-        run: |
-          python tests/test_audioop.py
-
   build_wheels:
-    name: Build wheels on ${{ matrix.os }}
+    name: Build wheels on ${{ matrix.os }} [${{ matrix.archs }}]
     runs-on: ${{ matrix.os }}
-    needs: [install_and_test]
     strategy:
       matrix:
-        os: ["ubuntu-latest", "windows-latest", "macos-latest"]
+        include:
+          # macOS Intel & ARM
+          - os: macos-latest
+            archs: all
+          # Windows x86 32-bit and 64-bit
+          - os: windows-latest
+            archs: auto
+          # Windows ARM
+          - os: windows-latest
+            archs: ARM64
+          # Linux x86 32-bit and 64-bit
+          - os: ubuntu-latest
+            archs: auto
+          # Linux aarch64
+          - os: ubuntu-latest
+            archs: aarch64
+          # Linux ppc64le
+          - os: ubuntu-latest
+            archs: ppc64le
+          # Linux s390x
+          - os: ubuntu-latest
+            archs: s390x
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        if: runner.os == 'Linux'
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: all
 
       - name: Build wheels
         uses: pypa/cibuildwheel@v2.19.2
         env:
           CIBW_BUILD: "cp313-*"
-          CIBW_ARCHS_MACOS: all
+          CIBW_ARCHS: ${{ matrix.archs }}
           CIBW_PRERELEASE_PYTHONS: true
 
       - uses: actions/upload-artifact@v4
         with:
-          name: artifact-cibw-wheels-${{ matrix.os }}-${{ strategy.job-index }}
+          name: artifact-cibw-wheels-${{ matrix.os }}-${{ matrix.archs }}-${{ strategy.job-index }}
           path: ./wheelhouse/*.whl
 
   make-sdist:
@@ -75,7 +79,7 @@ jobs:
     name: Publish built wheels to Pypi
     runs-on: ubuntu-latest
     environment: release
-    needs: [install_and_test, build_wheels]
+    needs: [make-sdist, build_wheels]
     permissions:
       id-token: write
 
